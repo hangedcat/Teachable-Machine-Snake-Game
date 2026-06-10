@@ -326,6 +326,27 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // Toggle Camera Flip Button
+    const btnFlipCamera = document.getElementById('btn-flip-camera');
+    let isCameraFlipped = localStorage.getItem('snake_camera_flipped') === 'true';
+
+    if (btnFlipCamera) {
+        btnFlipCamera.textContent = isCameraFlipped ? 'ON' : 'OFF';
+        if (isCameraFlipped) {
+            webcamContainer.classList.add('flipped');
+        }
+        btnFlipCamera.addEventListener('click', () => {
+            isCameraFlipped = !isCameraFlipped;
+            localStorage.setItem('snake_camera_flipped', isCameraFlipped.toString());
+            btnFlipCamera.textContent = isCameraFlipped ? 'ON' : 'OFF';
+            if (isCameraFlipped) {
+                webcamContainer.classList.add('flipped');
+            } else {
+                webcamContainer.classList.remove('flipped');
+            }
+        });
+    }
+
     // Window Resize Handler
     window.addEventListener('resize', () => {
         game.resize();

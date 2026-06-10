@@ -556,6 +556,12 @@ input[type="text"]:focus {
     height: 100% !important;
     object-fit: cover;
     transform: scaleX(-1);
+    transition: transform var(--transition-normal);
+}
+
+.webcam-container.flipped canvas,
+.webcam-container.flipped video {
+    transform: scaleX(1);
 }
 
 /* Scanner scanning animation line */
