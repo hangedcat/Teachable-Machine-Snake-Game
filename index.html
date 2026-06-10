@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teachable Machine Snake Game</title>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Main Style Sheet -->
+    <link rel="stylesheet" href="styles.css">
+    <!-- TensorFlow.js and Teachable Machine libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8.5/dist/teachablemachine-image.min.js" defer></script>
+    <!-- App Scripts -->
+    <script src="game.js" defer></script>
+    <script src="tm.js" defer></script>
+    <script src="ui.js" defer></script>
+</head>
+<body>
+    <!-- Tinted overlay -->
+    <div class="glow-bg"></div>
+    
+    <!-- Backdrop Scrim for Sidebar -->
+    <div id="sidebar-scrim" class="sidebar-scrim hidden"></div>
+
+    <!-- Scores overlay at top left (Dino style) -->
+    <div class="hud-scores-left">
+        HI <span id="high-score-val" class="hud-stat-num">000</span> &nbsp; <span id="score-val" class="hud-stat-num">000</span>
+    </div>
+
+    <!-- Canvas Fullscreen container -->
+    <div class="canvas-viewport">
+        <canvas id="game-canvas"></canvas>
+        
+        <!-- Game Over Dialog Overlay -->
+        <div id="game-over-screen" class="canvas-overlay hidden">
+            <div class="overlay-content glass-card">
+                <h2 class="editorial-title-red">GAME OVER</h2>
+                <p class="final-score-text">FINAL SCORE: <span id="final-score-val">0</span></p>
+                <button id="btn-restart" class="btn btn-primary btn-glow btn-full">
+                    <i class="fa-solid fa-rotate-right"></i> PLAY AGAIN
+                </button>
+            </div>
+        </div>
+
+        <!-- Start Dialog Overlay -->
+        <div id="start-screen" class="canvas-overlay">
+            <div class="overlay-content glass-card">
+                <h2 class="editorial-title-blue">SNAKE</h2>
+                <p class="instruction-text">Use WASD/Arrows to play or open settings to enable Teachable Machine webcam controls.</p>
+                <div class="dialog-actions">
+                    <button id="btn-start-game" class="btn btn-primary btn-glow-blue btn-full">
+                        <i class="fa-solid fa-play"></i> START GAME
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Pause Dialog Overlay -->
+        <div id="pause-screen" class="canvas-overlay hidden">
+            <div class="overlay-content glass-card">
+                <h2 class="editorial-title-yellow">PAUSED</h2>
+                <p class="instruction-text">Press Spacebar or click Resume to continue</p>
+                <button id="btn-resume-game" class="btn btn-warning btn-full">
+                    <i class="fa-solid fa-play"></i> RESUME
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Floating controls at bottom left -->
+    <div class="hud-controls-left">
+        <button id="btn-toggle-settings" class="btn btn-secondary btn-icon-only" title="Settings">
+            <i class="fa-solid fa-cog"></i>
+        </button>
+        <button id="btn-play-pause" class="btn btn-secondary btn-icon-only" title="Pause">
+            <i class="fa-solid fa-pause"></i>
+        </button>
+        <button id="btn-reset" class="btn btn-danger-outline btn-icon-only" title="Reset">
+            <i class="fa-solid fa-stop"></i>
+        </button>
+    </div>
+
+    <!-- Slide-out Settings Sidebar Drawer -->
+    <aside id="settings-sidebar" class="settings-sidebar">
+        <div class="sidebar-header">
+            <h3 class="sidebar-title"><i class="fa-solid fa-cog"></i> SETTINGS</h3>
+            <div class="sidebar-header-badges">
+                <div id="mode-badge" class="badge badge-keyboard">
+                    <i class="fa-solid fa-keyboard"></i> <span id="mode-text">KEYBOARD</span>
+                </div>
+                <div id="status-badge" class="badge badge-inactive">
+                    <i class="fa-solid fa-circle-notch fa-spin"></i> <span id="status-text">OFFLINE</span>
+                </div>
+            </div>
+            <button id="btn-close-settings" class="btn-close" title="Close Settings">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+        
+        <div class="sidebar-scroll-content">
+            <!-- Mode Switch Section -->
+            <div class="sidebar-section">
+                <h4 class="section-subtitle">Control Input Mode</h4>
+                <div class="mode-switch-container">
+                    <button id="btn-mode-keyboard" class="mode-btn active">
+                        <i class="fa-solid fa-keyboard"></i> Keyboard
+                    </button>
+                    <button id="btn-mode-ai" class="mode-btn">
+                        <i class="fa-solid fa-robot"></i> AI Webcam
+                    </button>
+                </div>
+            </div>
+
+            <!-- AI Setup Section (Hidden in Keyboard Mode) -->
+            <div id="ai-setup-group" class="sidebar-section hidden">
+                <h4 class="section-subtitle">Teachable Machine Setup</h4>
+                
+                <div class="input-label-group">
+                    <label for="model-url">Model Link URL</label>
+                    <div class="input-with-btn">
+                        <input type="text" id="model-url" placeholder="https://teachablemachine.withgoogle.com/models/xxxxxxx/" autocomplete="off">
+                        <button id="btn-load-model" class="btn btn-primary">
+                            <i class="fa-solid fa-download"></i>
+                        </button>
+                    </div>
+                    <p class="input-hint">Paste your exported Image Model URL.</p>
+                </div>
+                
+                <div class="slider-group">
+                    <div class="slider-header">
+                        <span>Confidence Threshold</span>
+                        <span id="threshold-val">80%</span>
+                    </div>
+                    <input type="range" id="threshold-slider" min="50" max="98" value="80" class="custom-slider">
+                </div>
+            </div>
+
+            <!-- Vision Panel Section (Hidden in Keyboard Mode) -->
+            <div id="ai-visuals-panel" class="sidebar-section hidden">
+                <h4 class="section-subtitle">Webcam & Model Analysis</h4>
+                
+                <div class="webcam-wrapper">
+                    <div id="webcam-placeholder" class="webcam-placeholder">
+                        <i class="fa-solid fa-video-slash"></i>
+                        <p>Camera inactive</p>
+                        <button id="btn-start-camera" class="btn btn-accent btn-sm">
+                            <i class="fa-solid fa-camera"></i> Enable Camera
+                        </button>
+                    </div>
+                    <div id="webcam-container" class="webcam-container"></div>
+                    <div class="scanning-bar"></div>
+                </div>
+
+                <div class="prediction-container">
+                    <h5 class="prediction-title">Probability Outputs</h5>
+                    <div id="predictions-list" class="predictions-list">
+                        <div class="prediction-placeholder">
+                            Load a model to view real-time direction classifications.
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Game Engine Settings Section -->
+            <div class="sidebar-section">
+                <h4 class="section-subtitle">Game Adjustments</h4>
+                <div class="game-adjustments">
+                    <div class="adjustment-row" style="margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
+                        <label for="speed-select">Speed Level:</label>
+                        <select id="speed-select" class="custom-select">
+                            <option value="120">SLOW</option>
+                            <option value="90" selected>NORMAL</option>
+                            <option value="60">FAST</option>
+                            <option value="40">INSANE</option>
+                        </select>
+                    </div>
+                    <div class="adjustment-row" style="display: flex; justify-content: space-between; align-items: center;">
+                        <label>Sound Effects:</label>
+                        <button id="btn-toggle-sound" class="btn btn-secondary btn-sm">ON</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Setup & Training Guide (Collapsible) -->
+            <div class="sidebar-section">
+                <div id="toggle-tutorial" class="tutorial-accordion-header">
+                    <span><i class="fa-solid fa-circle-question"></i> Setup & Training Guide</span>
+                    <span class="accordion-arrow"><i class="fa-solid fa-chevron-down"></i></span>
+                </div>
+                
+                <div id="tutorial-content" class="tutorial-content">
+                    <ol class="guide-steps">
+                        <li>Visit <a href="https://teachablemachine.withgoogle.com/" target="_blank" rel="noopener noreferrer" class="link-highlight">Teachable Machine <i class="fa-solid fa-external-link"></i></a> and start an <strong>Image Project</strong>.</li>
+                        <li>Create exactly <strong>5 Classes</strong> named:
+                            <div class="class-tags-grid">
+                                <code class="class-tag">Up</code>
+                                <code class="class-tag">Down</code>
+                                <code class="class-tag">Left</code>
+                                <code class="class-tag">Right</code>
+                                <code class="class-tag">Idle</code>
+                            </div>
+                        </li>
+                        <li>Record your webcam poses for each control direction, then click <strong>Train Model</strong>.</li>
+                        <li>Export the model using <strong>Upload (shareable link)</strong> and copy the URL.</li>
+                        <li>Switch to <strong>AI Webcam</strong> mode in settings, paste the URL and click Load.</li>
+                    </ol>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Error/Notification Popup -->
+    <div id="toast-notification" class="toast-container hidden">
+        <div class="toast-content">
+            <i class="fa-solid fa-circle-exclamation toast-icon"></i>
+            <span id="toast-message">Notification message here</span>
+        </div>
+    </div>
+</body>
+</html>
