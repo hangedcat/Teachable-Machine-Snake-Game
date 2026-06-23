@@ -19,6 +19,7 @@ class SnakeGame {
         this.onScoreChange = options.onScoreChange || (() => {});
         this.onGameOver = options.onGameOver || (() => {});
         this.onStateChange = options.onStateChange || (() => {});
+        this.onTick = options.onTick || (() => {});
         
         this.state = 'IDLE';
         this.snake = [];
@@ -126,6 +127,7 @@ class SnakeGame {
         } else {
             this.snake.pop();
         }
+        this.onTick(this.snake, this.food);
     }
     
     gameOver() {

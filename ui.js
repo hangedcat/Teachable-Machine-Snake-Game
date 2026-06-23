@@ -81,6 +81,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let toastTimeout = null;
     let lastScore = 0;
     let cachedPreds = {}; // ponytail: caches prediction list items to skip DOM lookups
+    let currentCorner = 'top-left'; // ponytail: tracks active corner for mini camera
 
     const tmHelper = new TMHelper();
     const sounds = new SoundFX();
@@ -114,6 +115,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.getElementById('pause-screen').classList.add('hidden');
                 document.getElementById('game-over-screen').classList.add('hidden');
             }
+        },
+        onTick: (snake, food) => {
+            updateCameraPopupPosition(snake, food);
         }
     });
 
@@ -145,6 +149,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const speedSelect = document.getElementById('speed-select');
     
     const webcamPlaceholder = document.getElementById('webcam-placeholder');
+    const webcamContainer = document.getElementById('webcam-container');
     const predictionsList = document.getElementById('predictions-list');
     
     const toggleTutorial = document.getElementById('toggle-tutorial');
@@ -246,11 +251,29 @@ document.addEventListener('DOMContentLoaded', () => {
     function openSettings() {
         settingsSidebar.classList.add('open');
         sidebarScrim.classList.remove('hidden');
+        
+        // ponytail: hide the mini camera popup and move its webcam canvas back to the settings sidebar panel
+        document.getElementById('camera-popup').classList.add('hidden');
+        const canvasEl = document.getElementById('popup-webcam-container').querySelector('canvas') || 
+                         document.getElementById('popup-webcam-container').querySelector('video');
+        if (canvasEl) {
+            webcamContainer.appendChild(canvasEl);
+        }
     }
 
     function closeSettings() {
         settingsSidebar.classList.remove('open');
         sidebarScrim.classList.add('hidden');
+        
+        // ponytail: if AI webcam is enabled and active, move webcam canvas to the popup and show it
+        if (controlMode === 'ai' && tmHelper.webcam) {
+            const canvasEl = webcamContainer.querySelector('canvas') || webcamContainer.querySelector('video');
+            if (canvasEl) {
+                document.getElementById('popup-webcam-container').appendChild(canvasEl);
+            }
+            document.getElementById('camera-popup').classList.remove('hidden');
+            updateCameraPopupPosition(game.snake, game.food);
+        }
     }
 
     btnToggleSettings.addEventListener('click', openSettings);
@@ -292,6 +315,9 @@ document.addEventListener('DOMContentLoaded', () => {
             tmHelper.stopWebcam();
             document.querySelector('.webcam-wrapper').classList.remove('active');
             webcamPlaceholder.classList.remove('hidden');
+            
+            // ponytail: hide the camera popup
+            document.getElementById('camera-popup').classList.add('hidden');
         } else {
             btnModeAi.classList.add('active');
             btnModeKeyboard.classList.remove('active');
@@ -468,6 +494,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const cached = cachedPreds[highestClass];
             if (cached) cached.row.classList.add('active');
             
+            updateJudgementText(highestClass);
+
             if (game.state === 'PLAYING') {
                 if (['up', 'down', 'left', 'right'].includes(highestClass)) {
                     if (game.changeDirection(highestClass)) {
@@ -475,6 +503,73 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 }
             }
+        } else {
+            updateJudgementText('none');
+        }
+    }
+
+    // ponytail: functions for corner camera positioning and model classification text updates
+    function getCornerBounds(corner) {
+        return {
+            'top-left': { minX: 1, maxX: 8, minY: 1, maxY: 4 },
+            'top-right': { minX: 11, maxX: 18, minY: 1, maxY: 4 },
+            'bottom-left': { minX: 1, maxX: 8, minY: 15, maxY: 18 },
+            'bottom-right': { minX: 11, maxX: 18, minY: 15, maxY: 18 }
+        }[corner];
+    }
+
+    function updateCameraPopupPosition(snake, food) {
+        if (controlMode !== 'ai' || settingsSidebar.classList.contains('open')) return;
+
+        const corners = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
+        let bestCorner = currentCorner;
+        let minScore = Infinity;
+
+        corners.forEach(corner => {
+            const bounds = getCornerBounds(corner);
+            let score = 0;
+
+            if (food.x >= bounds.minX && food.x <= bounds.maxX && food.y >= bounds.minY && food.y <= bounds.maxY) {
+                score += 1000;
+            }
+
+            snake.forEach(seg => {
+                if (seg.x >= bounds.minX && seg.x <= bounds.maxX && seg.y >= bounds.minY && seg.y <= bounds.maxY) {
+                    score += 100;
+                }
+            });
+
+            const head = snake[0];
+            const cornerCenterX = (bounds.minX + bounds.maxX) / 2;
+            const cornerCenterY = (bounds.minY + bounds.maxY) / 2;
+            const dist = Math.abs(head.x - cornerCenterX) + Math.abs(head.y - cornerCenterY);
+            if (dist < 6) score += (6 - dist) * 50;
+
+            if (corner === currentCorner) score -= 10;
+
+            if (score < minScore) {
+                minScore = score;
+                bestCorner = corner;
+            }
+        });
+
+        if (bestCorner !== currentCorner) {
+            const popup = document.getElementById('camera-popup');
+            popup.classList.remove(currentCorner);
+            popup.classList.add(bestCorner);
+            currentCorner = bestCorner;
+        }
+    }
+
+    function updateJudgementText(classKey) {
+        const valEl = document.getElementById('popup-judgement-value');
+        if (!valEl) return;
+        const names = { up: 'Up', down: 'Down', left: 'Left', right: 'Right', idle: 'None', none: 'None' };
+        const display = names[classKey] || 'None';
+        valEl.textContent = display;
+        valEl.className = 'popup-judgement-value';
+        if (display !== 'None') {
+            valEl.classList.add(classKey);
         }
     }
 });

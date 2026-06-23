@@ -9,14 +9,14 @@
     <!-- FontAwesome for icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Main Style Sheet -->
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="styles.css?v=2">
     <!-- TensorFlow.js and Teachable Machine libraries -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8.5/dist/teachablemachine-image.min.js" defer></script>
     <!-- App Scripts -->
-    <script src="game.js" defer></script>
-    <script src="tm.js" defer></script>
-    <script src="ui.js" defer></script>
+    <script src="game.js?v=2" defer></script>
+    <script src="tm.js?v=2" defer></script>
+    <script src="ui.js?v=2" defer></script>
 </head>
 <body>
     <!-- Tinted overlay -->
@@ -32,7 +32,18 @@
 
     <!-- Canvas Fullscreen container -->
     <div class="canvas-viewport">
-        <canvas id="game-canvas"></canvas>
+        <div class="game-container">
+            <canvas id="game-canvas"></canvas>
+            
+            <!-- Floating Camera Mini Popup -->
+            <div id="camera-popup" class="camera-popup hidden top-left">
+                <div id="popup-webcam-container" class="popup-webcam-container"></div>
+                <div id="popup-judgement-container" class="popup-judgement-container">
+                    <span class="popup-judgement-label">Judgement</span>
+                    <span id="popup-judgement-value" class="popup-judgement-value">None</span>
+                </div>
+            </div>
+        </div>
         
         <!-- Game Over Dialog Overlay -->
         <div id="game-over-screen" class="canvas-overlay hidden">
