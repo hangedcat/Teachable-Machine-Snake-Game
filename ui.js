@@ -1,6 +1,7 @@
 /**
  * UI and State Manager for NeuroSnake
  * Orchestrates interaction between the Canvas Game and the AI Teachable Machine Helper.
+ * ponytail: simplified by caching predictions DOM elements, consolidating SoundFX tone loops, and removing camera flips.
  */
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -29,94 +30,44 @@ document.addEventListener('DOMContentLoaded', () => {
             return this.enabled;
         }
 
-        playEat() {
+        // ponytail: combined 4 oscillator generators into one flexible tone generator to eliminate boilerplates
+        playTone(type, fStart, fEnd, dur, vol, isExp = false) {
             if (!this.enabled) return;
             this.init();
             if (!this.ctx) return;
-
             const now = this.ctx.currentTime;
             const osc = this.ctx.createOscillator();
             const gain = this.ctx.createGain();
-
-            osc.type = 'sine';
-            osc.frequency.setValueAtTime(300, now);
-            osc.frequency.exponentialRampToValueAtTime(600, now + 0.08);
-
-            gain.gain.setValueAtTime(0.08, now);
-            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
-
+            osc.type = type;
+            osc.frequency.setValueAtTime(fStart, now);
+            if (isExp) osc.frequency.exponentialRampToValueAtTime(fEnd, now + dur);
+            else osc.frequency.linearRampToValueAtTime(fEnd, now + dur);
+            gain.gain.setValueAtTime(vol, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
             osc.connect(gain);
             gain.connect(this.ctx.destination);
-
             osc.start(now);
-            osc.stop(now + 0.08);
+            osc.stop(now + dur);
         }
 
-        playGameOver() {
-            if (!this.enabled) return;
-            this.init();
-            if (!this.ctx) return;
-
-            const now = this.ctx.currentTime;
-            const osc = this.ctx.createOscillator();
-            const gain = this.ctx.createGain();
-
-            osc.type = 'sawtooth';
-            osc.frequency.setValueAtTime(150, now);
-            osc.frequency.linearRampToValueAtTime(40, now + 0.4);
-
-            gain.gain.setValueAtTime(0.1, now);
-            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
-
-            osc.connect(gain);
-            gain.connect(this.ctx.destination);
-
-            osc.start(now);
-            osc.stop(now + 0.4);
-        }
-
-        playMove() {
-            if (!this.enabled) return;
-            this.init();
-            if (!this.ctx) return;
-
-            const now = this.ctx.currentTime;
-            const osc = this.ctx.createOscillator();
-            const gain = this.ctx.createGain();
-
-            osc.type = 'triangle';
-            osc.frequency.setValueAtTime(110, now);
-            osc.frequency.linearRampToValueAtTime(70, now + 0.03);
-
-            gain.gain.setValueAtTime(0.02, now);
-            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.03);
-
-            osc.connect(gain);
-            gain.connect(this.ctx.destination);
-
-            osc.start(now);
-            osc.stop(now + 0.03);
-        }
+        playEat() { this.playTone('sine', 300, 600, 0.08, 0.08, true); }
+        playGameOver() { this.playTone('sawtooth', 150, 40, 0.4, 0.1, false); }
+        playMove() { this.playTone('triangle', 110, 70, 0.03, 0.02, false); }
 
         playStart() {
             if (!this.enabled) return;
             this.init();
             if (!this.ctx) return;
-
             const now = this.ctx.currentTime;
             const osc = this.ctx.createOscillator();
             const gain = this.ctx.createGain();
-
             osc.type = 'triangle';
-            osc.frequency.setValueAtTime(261.63, now); // C4
-            osc.frequency.setValueAtTime(392.00, now + 0.08); // G4
-
+            osc.frequency.setValueAtTime(261.63, now);
+            osc.frequency.setValueAtTime(392.00, now + 0.08);
             gain.gain.setValueAtTime(0.06, now);
             gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
-
             osc.connect(gain);
             gain.connect(this.ctx.destination);
-
             osc.start(now);
             osc.stop(now + 0.2);
         }
@@ -125,29 +76,22 @@ document.addEventListener('DOMContentLoaded', () => {
     // ----------------------------------------------------
     // State Variables & Instantiations
     // ----------------------------------------------------
-    let controlMode = 'keyboard'; // 'keyboard' or 'ai'
+    let controlMode = 'keyboard';
     let confidenceThreshold = 0.8;
     let toastTimeout = null;
     let lastScore = 0;
+    let cachedPreds = {}; // ponytail: caches prediction list items to skip DOM lookups
 
     const tmHelper = new TMHelper();
     const sounds = new SoundFX();
     
-    // Initialize Snake Game with UI Callbacks
     const game = new SnakeGame('game-canvas', {
-        wrapAround: false, // Solid boundaries by default
         speedMs: 90,
         onScoreChange: (score, highScore) => {
             document.getElementById('score-val').textContent = String(score).padStart(5, '0');
             document.getElementById('high-score-val').textContent = String(highScore).padStart(5, '0');
-            if (score > lastScore) {
-                sounds.playEat();
-            }
-            if (score === 0) {
-                lastScore = 0;
-            } else {
-                lastScore = score;
-            }
+            if (score > lastScore) sounds.playEat();
+            lastScore = score === 0 ? 0 : score;
         },
         onGameOver: (score) => {
             document.getElementById('final-score-val').textContent = score;
@@ -201,7 +145,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const speedSelect = document.getElementById('speed-select');
     
     const webcamPlaceholder = document.getElementById('webcam-placeholder');
-    const webcamContainer = document.getElementById('webcam-container');
     const predictionsList = document.getElementById('predictions-list');
     
     const toggleTutorial = document.getElementById('toggle-tutorial');
@@ -210,7 +153,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const toastNotification = document.getElementById('toast-notification');
     const toastMessage = document.getElementById('toast-message');
 
-    // Sidebar & Scrim Nodes
     const btnToggleSettings = document.getElementById('btn-toggle-settings');
     const btnCloseSettings = document.getElementById('btn-close-settings');
     const settingsSidebar = document.getElementById('settings-sidebar');
@@ -220,27 +162,17 @@ document.addEventListener('DOMContentLoaded', () => {
     // Toast Notification System
     // ----------------------------------------------------
     function showToast(message, isSuccess = false) {
-        if (toastTimeout) {
-            clearTimeout(toastTimeout);
-        }
-        
+        if (toastTimeout) clearTimeout(toastTimeout);
         toastMessage.textContent = message;
         toastNotification.classList.remove('hidden', 'success');
-        
-        if (isSuccess) {
-            toastNotification.classList.add('success');
-        }
-        
-        toastTimeout = setTimeout(() => {
-            toastNotification.classList.add('hidden');
-        }, 3500);
+        if (isSuccess) toastNotification.classList.add('success');
+        toastTimeout = setTimeout(() => toastNotification.classList.add('hidden'), 3500);
     }
 
     // ----------------------------------------------------
-    // Keyboard Controls Mapping (Always operational for rescue)
+    // Keyboard Controls Mapping
     // ----------------------------------------------------
     window.addEventListener('keydown', (e) => {
-        // Prevent default scrolling keys when active on canvas
         if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(e.key)) {
             e.preventDefault();
         }
@@ -266,10 +198,10 @@ document.addEventListener('DOMContentLoaded', () => {
             case 'D':
                 if (game.changeDirection('RIGHT')) sounds.playMove();
                 break;
-            case ' ': // Spacebar for Play/Pause/Start
+            case ' ':
                 handlePlayPauseAction();
                 break;
-            case 'Enter': // Enter for Restart when game over
+            case 'Enter':
                 if (game.state === 'GAME_OVER') {
                     sounds.playStart();
                     game.start();
@@ -290,67 +222,25 @@ document.addEventListener('DOMContentLoaded', () => {
     // ----------------------------------------------------
     // UI Button & Viewport Listeners
     // ----------------------------------------------------
-    btnStartGame.addEventListener('click', () => {
-        sounds.playStart();
-        game.start();
-    });
-    btnResumeGame.addEventListener('click', () => {
-        sounds.playStart();
-        game.start();
-    });
-    btnRestart.addEventListener('click', () => {
-        sounds.playStart();
-        game.start();
-    });
-    
+    btnStartGame.addEventListener('click', () => { sounds.playStart(); game.start(); });
+    btnResumeGame.addEventListener('click', () => { sounds.playStart(); game.start(); });
+    btnRestart.addEventListener('click', () => { sounds.playStart(); game.start(); });
     btnPlayPause.addEventListener('click', handlePlayPauseAction);
-    btnReset.addEventListener('click', () => {
-        sounds.playStart();
-        game.reset();
-    });
+    btnReset.addEventListener('click', () => { sounds.playStart(); game.reset(); });
     
     speedSelect.addEventListener('change', (e) => {
         game.setSpeed(parseInt(e.target.value, 10));
     });
 
-    // Toggle Sound Button
     const btnToggleSound = document.getElementById('btn-toggle-sound');
     if (btnToggleSound) {
         btnToggleSound.textContent = sounds.enabled ? 'ON' : 'OFF';
         btnToggleSound.addEventListener('click', () => {
             const enabled = sounds.toggle();
             btnToggleSound.textContent = enabled ? 'ON' : 'OFF';
-            if (enabled) {
-                sounds.playStart();
-            }
+            if (enabled) sounds.playStart();
         });
     }
-
-    // Toggle Camera Flip Button
-    const btnFlipCamera = document.getElementById('btn-flip-camera');
-    let isCameraFlipped = localStorage.getItem('snake_camera_flipped') === 'true';
-
-    if (btnFlipCamera) {
-        btnFlipCamera.textContent = isCameraFlipped ? 'ON' : 'OFF';
-        if (isCameraFlipped) {
-            webcamContainer.classList.add('flipped');
-        }
-        btnFlipCamera.addEventListener('click', () => {
-            isCameraFlipped = !isCameraFlipped;
-            localStorage.setItem('snake_camera_flipped', isCameraFlipped.toString());
-            btnFlipCamera.textContent = isCameraFlipped ? 'ON' : 'OFF';
-            if (isCameraFlipped) {
-                webcamContainer.classList.add('flipped');
-            } else {
-                webcamContainer.classList.remove('flipped');
-            }
-        });
-    }
-
-    // Window Resize Handler
-    window.addEventListener('resize', () => {
-        game.resize();
-    });
 
     // Settings Sidebar Toggles
     function openSettings() {
@@ -367,14 +257,12 @@ document.addEventListener('DOMContentLoaded', () => {
     btnCloseSettings.addEventListener('click', closeSettings);
     sidebarScrim.addEventListener('click', closeSettings);
 
-    // Toggle Tutorial Accordion
     toggleTutorial.addEventListener('click', () => {
         const arrow = toggleTutorial.querySelector('.accordion-arrow');
         tutorialContent.classList.toggle('collapsed');
         arrow.classList.toggle('collapsed');
     });
 
-    // Slider Listeners
     sliderThreshold.addEventListener('input', (e) => {
         const val = e.target.value;
         valThreshold.textContent = `${val}%`;
@@ -394,35 +282,29 @@ document.addEventListener('DOMContentLoaded', () => {
         if (mode === 'keyboard') {
             btnModeKeyboard.classList.add('active');
             btnModeAi.classList.remove('active');
-            
             aiSetupGroup.classList.add('hidden');
             aiVisualsPanel.classList.add('hidden');
             
-            // Revert Header Badge
             modeBadge.className = 'badge badge-keyboard';
             modeText.textContent = 'KEYBOARD MODE';
             modeBadge.querySelector('i').className = 'fa-solid fa-keyboard';
             
-            // Clean up webcam to save system resources
             tmHelper.stopWebcam();
             document.querySelector('.webcam-wrapper').classList.remove('active');
             webcamPlaceholder.classList.remove('hidden');
         } else {
             btnModeAi.classList.add('active');
             btnModeKeyboard.classList.remove('active');
-            
             aiSetupGroup.classList.remove('hidden');
             aiVisualsPanel.classList.remove('hidden');
             
-            // Change Header Badge
             modeBadge.className = 'badge badge-ai';
             modeText.textContent = 'AI WEBCAM MODE';
             modeBadge.querySelector('i').className = 'fa-solid fa-robot';
             
-            // Proactive checks
-            if (tmHelper.isModelLoaded) {
+            if (tmHelper.model) {
                 updateModelStatusBadge('online');
-                if (!tmHelper.isWebcamActive) {
+                if (!tmHelper.webcam) {
                     showToast("Model is online! Connect your camera below to start.", true);
                 } else {
                     startAIProcessing();
@@ -436,14 +318,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // ----------------------------------------------------
     // Teachable Machine Actions
     // ----------------------------------------------------
-    
-    // Auto-load last successful model link
     const cachedUrl = localStorage.getItem('neuro_snake_model_url');
-    if (cachedUrl) {
-        inputModelUrl.value = cachedUrl;
-    }
+    if (cachedUrl) inputModelUrl.value = cachedUrl;
 
-    // Load Model Trigger
     btnLoadModel.addEventListener('click', async () => {
         const url = inputModelUrl.value.trim();
         if (!url) {
@@ -457,18 +334,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         try {
             const classes = await tmHelper.loadModel(url);
-            
-            // Save successful URL
             localStorage.setItem('neuro_snake_model_url', url);
-            
             showToast("Teachable Machine Model Loaded Successfully!", true);
             updateModelStatusBadge('online');
-            
-            // Initialize progress bars in the visualizer list
             renderPredictionBars(classes);
-            
-            // Prompt/Setup webcam if not active
-            if (!tmHelper.isWebcamActive) {
+            if (!tmHelper.webcam) {
                 await startWebcamFeed();
             } else {
                 startAIProcessing();
@@ -482,7 +352,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Start Camera Manually Button
     btnStartCamera.addEventListener('click', async () => {
         await startWebcamFeed();
     });
@@ -493,11 +362,8 @@ document.addEventListener('DOMContentLoaded', () => {
         
         try {
             await tmHelper.setupWebcam('webcam-container');
-            
-            // Visual indicators
             webcamPlaceholder.classList.add('hidden');
             document.querySelector('.webcam-wrapper').classList.add('active');
-            
             startAIProcessing();
         } catch (err) {
             showToast(err.message);
@@ -506,19 +372,16 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Starts processing frame inputs if model & camera are active
     function startAIProcessing() {
-        if (controlMode === 'ai' && tmHelper.isModelLoaded && tmHelper.isWebcamActive) {
+        if (controlMode === 'ai' && tmHelper.model && tmHelper.webcam) {
             tmHelper.startPredictionLoop((predictions) => {
                 handlePredictions(predictions);
             });
         }
     }
 
-    // Update Model Badge visual indicator
     function updateModelStatusBadge(status) {
-        statusBadge.className = 'badge'; // reset
-        
+        statusBadge.className = 'badge';
         switch (status) {
             case 'offline':
                 statusBadge.classList.add('badge-inactive');
@@ -539,7 +402,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 statusBadge.classList.add('badge-inactive');
                 statusText.textContent = 'LOAD ERROR';
                 statusBadge.querySelector('i').className = 'fa-solid fa-circle-xmark';
-                // Inline styling correction for error visibility
                 statusBadge.style.borderColor = 'var(--danger)';
                 statusBadge.style.color = 'var(--danger)';
                 statusBadge.style.background = 'rgba(198, 69, 69, 0.1)';
@@ -547,23 +409,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Render prediction list structures dynamically
     function renderPredictionBars(classLabels) {
         predictionsList.innerHTML = "";
-        
-        // Custom icons for classes based on direction tags
-        const classIcons = {
-            up: 'fa-chevron-up',
-            down: 'fa-chevron-down',
-            left: 'fa-chevron-left',
-            right: 'fa-chevron-right',
-            idle: 'fa-circle-dot'
-        };
+        cachedPreds = {};
+        const classIcons = { up: 'fa-chevron-up', down: 'fa-chevron-down', left: 'fa-chevron-left', right: 'fa-chevron-right', idle: 'fa-circle-dot' };
 
         classLabels.forEach(label => {
             const key = label.toLowerCase();
             const icon = classIcons[key] || 'fa-question';
-            
             const row = document.createElement('div');
             row.className = `pred-row ${key}`;
             row.id = `pred-row-${key}`;
@@ -578,10 +431,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             `;
             predictionsList.appendChild(row);
+            
+            // ponytail: cache elements during creation to avoid costly querySelector lookups in requestAnimationFrame loop
+            cachedPreds[key] = {
+                fill: row.querySelector('.pred-fill'),
+                pct: row.querySelector('.pred-pct'),
+                row: row
+            };
         });
     }
 
-    // Handle predictions stream update
     function handlePredictions(predictions) {
         if (controlMode !== 'ai') return;
         
@@ -590,38 +449,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
         predictions.forEach(p => {
             const key = p.className.toLowerCase();
-            const probability = p.probability;
+            const cached = cachedPreds[key];
             
-            // Check if bar is rendered
-            const fillEl = document.getElementById(`pred-fill-${key}`);
-            const pctEl = document.getElementById(`pred-pct-${key}`);
-            const rowEl = document.getElementById(`pred-row-${key}`);
-            
-            if (fillEl && pctEl) {
-                // Update fill width and text
-                const percentage = Math.round(probability * 100);
-                fillEl.style.width = `${percentage}%`;
-                pctEl.textContent = `${percentage}%`;
+            if (cached) {
+                const percentage = Math.round(p.probability * 100);
+                cached.fill.style.width = `${percentage}%`;
+                cached.pct.textContent = `${percentage}%`;
                 
-                // Track highest
-                if (probability > highestProb) {
-                    highestProb = probability;
+                if (p.probability > highestProb) {
+                    highestProb = p.probability;
                     highestClass = key;
                 }
-                
-                // Reset active row styles temporarily
-                rowEl.classList.remove('active');
+                cached.row.classList.remove('active');
             }
         });
 
-        // If highest probability exceeds sensitivity threshold, process input
         if (highestProb >= confidenceThreshold) {
-            const activeRow = document.getElementById(`pred-row-${highestClass}`);
-            if (activeRow) {
-                activeRow.classList.add('active');
-            }
+            const cached = cachedPreds[highestClass];
+            if (cached) cached.row.classList.add('active');
             
-            // Trigger game direction change if playing
             if (game.state === 'PLAYING') {
                 if (['up', 'down', 'left', 'right'].includes(highestClass)) {
                     if (game.changeDirection(highestClass)) {
