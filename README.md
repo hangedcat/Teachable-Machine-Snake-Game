@@ -1,4 +1,4 @@
-# NeuroSnake: AI-Powered Gesture-Controlled Snake
+#AI-Powered Gesture-Controlled Snake
 
 A high-fidelity, premium browser-based Snake game written in vanilla JavaScript and HTML5 Canvas. The game is controllable via standard keyboard inputs or real-time webcam gestures using a custom-trained **Google Teachable Machine** image classification model powered by **TensorFlow.js**.
 
